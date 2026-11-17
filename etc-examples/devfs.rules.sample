@@ -1,0 +1,5 @@
+# Example permissions for virtual_oss devices. Review devfs.rules(5) and
+# merge into an appropriate ruleset instead of replacing existing rules.
+[quickshell_eq=20]
+add path 'vdsp*' mode 0666
+add path 'dsp*' mode 0666

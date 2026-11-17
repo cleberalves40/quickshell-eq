@@ -1,0 +1,6 @@
+# Minimal examples for quickshell-eq; merge only what your system needs into
+# /etc/rc.conf. See rc.conf(5), virtual_oss(8), and the FreeBSD handbook.
+kld_list="${kld_list} cuse"
+virtual_oss_enable="YES"
+virtual_oss_configs="local"
+hcsecd_enable="YES"

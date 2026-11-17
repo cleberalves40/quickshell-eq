@@ -1,0 +1,4 @@
+# Sample Bluetooth host database entry. Replace the example address with
+# the Bluetooth address of your own device before enabling it.
+# BD_ADDR               Name [ alias0 alias1 ... ]
+# aa:bb:cc:dd:ee:ff     JBL

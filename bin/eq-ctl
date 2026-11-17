@@ -1,0 +1,115 @@
+#!/bin/sh
+
+PATH="/usr/local/sbin:/usr/sbin:/sbin:$PATH"
+export PATH
+DIR="$HOME/.config/eq-profiles"
+STATE="$DIR/.current"
+BOOST_FILE="$DIR/.boost"
+BAL_FILE="$DIR/.balance"
+JBL_BIN=$(which jbl 2>/dev/null || echo "/usr/local/bin/jbl")
+
+get_ctl() {
+    if [ -c "/dev/vdsp.jbl.ctl" ]; then
+        echo "/dev/vdsp.jbl.ctl"
+    else
+        echo "/dev/vdsp.local.ctl"
+    fi
+}
+
+apply_balance() {
+    CTL="$1"
+    BAL="$2"
+    [ -c "$CTL" ] || return 0
+    if [ "$BAL" -lt 0 ]; then
+        L_AMP=0
+        R_AMP=$((BAL * 3))
+        [ "$BAL" -le -10 ] && R_AMP=-63
+    elif [ "$BAL" -gt 0 ]; then
+        R_AMP=0
+        L_AMP=$((-BAL * 3))
+        [ "$BAL" -ge 10 ] && L_AMP=-63
+    else
+        L_AMP=0
+        R_AMP=0
+    fi
+    virtual_oss_cmd "$CTL" -M "o,0,0,0,0,$L_AMP" 2>/dev/null || true
+    virtual_oss_cmd "$CTL" -M "o,1,1,0,0,$R_AMP" 2>/dev/null || true
+}
+
+apply_eq() {
+    CTL=$(get_ctl)
+    if [ -c "$CTL" ]; then
+        [ -f "$DIR/active.txt" ] && virtual_equalizer -d "$CTL" -c 2 -f "$DIR/active.txt" 2>/dev/null || true
+        BOOST=$(cat "$BOOST_FILE" 2>/dev/null || echo "0")
+        virtual_oss_cmd "$CTL" -a "o,$BOOST" 2>/dev/null || true
+        BAL=$(cat "$BAL_FILE" 2>/dev/null || echo "0")
+        apply_balance "$CTL" "$BAL"
+    fi
+}
+
+case "$1" in
+    set-eq)
+        if [ -f "$DIR/$2.txt" ]; then
+            cp "$DIR/$2.txt" "$DIR/active.txt"
+            echo "$2" > "$STATE"
+            apply_eq
+        fi
+        ;;
+    set-custom)
+        shift
+        printf "%s\n" "$@" > "$DIR/custom.txt"
+        cp "$DIR/custom.txt" "$DIR/active.txt"
+        echo "custom" > "$STATE"
+        apply_eq
+        ;;
+    save-profile)
+        NAME="$2"
+        shift 2
+        printf "%s\n" "$@" > "$DIR/$NAME.txt"
+        cp "$DIR/$NAME.txt" "$DIR/active.txt"
+        echo "$NAME" > "$STATE"
+        apply_eq
+        ;;
+    set-boost)
+        echo "$2" > "$BOOST_FILE"
+        CTL=$(get_ctl)
+        [ -c "$CTL" ] && virtual_oss_cmd "$CTL" -a "o,$2" 2>/dev/null || true
+        ;;
+    set-balance)
+        echo "$2" > "$BAL_FILE"
+        CTL=$(get_ctl)
+        apply_balance "$CTL" "$2"
+        ;;
+    list-profiles)
+        for f in "$DIR"/*.txt; do
+            base=$(basename "$f" .txt)
+            [ "$base" != "active" ] && [ "$base" != "custom" ] && printf "%s " "$base"
+        done
+        echo ""
+        ;;
+    get-state)
+        CUR=$(cat "$STATE" 2>/dev/null || echo "flat")
+        BOOST=$(cat "$BOOST_FILE" 2>/dev/null || echo "0")
+        BAL=$(cat "$BAL_FILE" 2>/dev/null || echo "0")
+        VALS=$(awk '{printf "%s ", $2}' "$DIR/active.txt" 2>/dev/null)
+        echo "${CUR}|${VALS}|${BOOST}|${BAL}"
+        ;;
+    discover-bt)
+        echo "JBL|JBL|nearby;"
+        ;;
+    set-out)
+        if [ "$2" = "bt" ]; then
+            doas "$JBL_BIN" start >/dev/null 2>&1 || true
+            sleep 1
+            apply_eq
+        else
+            doas "$JBL_BIN" stop >/dev/null 2>&1 || true
+            sleep 1
+            pactl set-default-sink laptop_eq >/dev/null 2>&1 || true
+            for i in $(pactl list sink-inputs short 2>/dev/null | cut -f1); do
+                pactl move-sink-input "$i" laptop_eq >/dev/null 2>&1 || true
+            done
+            apply_eq
+        fi
+        ;;
+esac

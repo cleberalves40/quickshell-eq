@@ -1,0 +1,3 @@
+# Example only: replace USER with the account that runs Quickshell.
+# Review doas.conf(5) and grant only the required command.
+permit nopass USER as root cmd /usr/local/bin/jbl

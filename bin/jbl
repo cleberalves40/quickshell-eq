@@ -1,0 +1,192 @@
+#!/bin/sh
+#
+# jbl - usa a JBL Charge Essential como saída de som via Bluetooth (A2DP)
+#        no FreeBSD, com virtual_oss + PulseAudio.
+#
+# Uso:
+#   doas jbl start    pareia (se preciso), conecta e torna a JBL a saída padrão
+#   doas jbl stop     desconecta e volta para a saída anterior
+#   jbl status        mostra se a caixa está ao alcance, conectada e em uso
+#
+# Variáveis opcionais: JBL_BDADDR, JBL_HCI_NODE, JBL_PIN, JBL_RATE
+
+set -u
+
+BDADDR="${JBL_BDADDR:-}"
+HCI_NODE="${JBL_HCI_NODE:-ubt0hci}"
+PIN="${JBL_PIN:-0000}"
+RATE="${JBL_RATE:-48000}"
+DSP="dsp.jbl"
+SINK="jbl"
+
+# O virtual_oss do base limita o nome do dispositivo a 26 caracteres
+# (VMAX_STRING = 27), e "/dev/bluetooth/<bdaddr>" tem 32. Por isso usamos
+# o apelido de /etc/bluetooth/hosts, que o backend resolve com bt_gethostbyname.
+BT_NAME="${JBL_BT_NAME:-JBL}"
+BT_DEV="/dev/bluetooth/$BT_NAME"
+BT_HOSTS=/etc/bluetooth/hosts
+
+HCSECD_CONF=/etc/bluetooth/hcsecd.conf
+VOSS=/usr/sbin/virtual_oss
+[ -x "$VOSS" ] || VOSS=/usr/local/sbin/virtual_oss
+PACTL=/usr/local/bin/pactl
+HCCONTROL=/usr/sbin/hccontrol
+
+PROG=$(basename "$0")
+
+die()  { echo "$PROG: $*" >&2; exit 1; }
+info() { echo "$PROG: $*"; }
+
+need_root() {
+	[ "$(id -u)" -eq 0 ] || die "'$1' precisa de root. Rode: doas $PROG $1"
+}
+
+# Dono do PulseAudio: quem chamou o doas/sudo, ou o próprio usuário.
+pulse_user() {
+	echo "${DOAS_USER:-${SUDO_USER:-$(id -un)}}"
+}
+
+# Executa pactl no PulseAudio do usuário, mesmo quando o script roda como root.
+pa() {
+	u=$(pulse_user)
+	if [ "$(id -u)" -eq 0 ] && [ "$u" != "root" ]; then
+		home=$(getent passwd "$u" | cut -d: -f6)
+		su -m "$u" -c "env HOME=$home XDG_RUNTIME_DIR=/var/run/xdg/$u $PACTL $*"
+	else
+		"$PACTL" "$@"
+	fi
+}
+
+voss_pid() {
+	pgrep -f "virtual_oss.*$BT_DEV( |\$)"
+}
+
+oss_module_index() {
+	pa list modules short 2>/dev/null |
+	while read -r idx mod args; do
+		case "$mod $args" in
+		"module-oss "*"/dev/$DSP"*) echo "$idx" ;;
+		esac
+	done
+}
+
+reachable() {
+	"$HCCONTROL" -n "$HCI_NODE" remote_name_request "$BDADDR" 2>/dev/null |
+	    sed -n 's/^Name: //p'
+}
+
+ensure_hosts_entry() {
+	if grep -Eqi "^$BDADDR[[:space:]]+(.*[[:space:]])?$BT_NAME([[:space:]]|\$)" "$BT_HOSTS"; then
+		return 0
+	fi
+	printf '%s\t%s\n' "$BDADDR" "$BT_NAME" >> "$BT_HOSTS" ||
+	    die "não consegui gravar em $BT_HOSTS"
+	info "apelido '$BT_NAME' adicionado a $BT_HOSTS"
+}
+
+ensure_hcsecd_entry() {
+	if grep -qi "bdaddr[[:space:]]*$BDADDR" "$HCSECD_CONF"; then
+		return 0
+	fi
+	bak="$HCSECD_CONF.bak.$(date +%Y%m%d%H%M%S)"
+	cp -p "$HCSECD_CONF" "$bak" || die "não consegui fazer backup de $HCSECD_CONF"
+	cat >> "$HCSECD_CONF" <<EOF
+
+# JBL Charge Essential (adicionado por $PROG em $(date '+%Y-%m-%d %H:%M'))
+device {
+	bdaddr	$BDADDR;
+	name	"JBL Charge Essential";
+	key	nokey;
+	pin	"$PIN";
+}
+EOF
+	info "entrada da JBL adicionada a $HCSECD_CONF (backup em $bak)"
+	service hcsecd restart >/dev/null || die "falha ao reiniciar o hcsecd"
+}
+
+cmd_start() {
+	need_root start
+	[ -n "$BDADDR" ] || die "configure JBL_BDADDR before connecting (for example: JBL_BDADDR=aa:bb:cc:dd:ee:ff doas $PROG start)"
+
+	kldstat -q -m cuse || kldload cuse || die "não consegui carregar o módulo cuse"
+	ensure_hosts_entry
+	ensure_hcsecd_entry
+
+	if [ -n "$(voss_pid)" ]; then
+		info "virtual_oss já está conectado à JBL (pid $(voss_pid))"
+	else
+		name=$(reachable)
+		[ -n "$name" ] || die "a JBL ($BDADDR) não respondeu. Ligue a caixa e aproxime do laptop."
+		info "conectando a $name ..."
+
+		"$VOSS" -B -t vdsp.jbl.ctl -C 2 -c 2 -r "$RATE" -b 16 -s 768 \
+		    -R /dev/null -P "$BT_DEV" -d "$DSP" ||
+		    die "o virtual_oss falhou ao iniciar. Veja /var/log/messages."
+
+		i=0
+		while [ ! -e "/dev/$DSP" ] && [ $i -lt 15 ]; do
+			sleep 1; i=$((i + 1))
+		done
+		[ -e "/dev/$DSP" ] || die "/dev/$DSP não apareceu em 15 s. O pareamento pode ter falhado."
+		[ -n "$(voss_pid)" ] || die "o virtual_oss encerrou logo após iniciar. Veja /var/log/messages."
+	fi
+
+	if [ -z "$(oss_module_index)" ]; then
+		pa load-module module-oss device=/dev/$DSP sink_name=$SINK \
+		    record=0 playback=1 mmap=0 >/dev/null ||
+		    die "o PulseAudio recusou carregar o module-oss para /dev/$DSP"
+	fi
+	pa set-default-sink "$SINK" || die "não consegui tornar '$SINK' a saída padrão"
+
+	# Streams already open (Brave, Firefox in Podman, etc.) may be pinned
+	# to the old output by module-stream-restore; move them all to the JBL.
+	n=0
+	for i in $(pa list sink-inputs short 2>/dev/null | cut -f1); do
+		pa move-sink-input "$i" "$SINK" >/dev/null 2>&1 && n=$((n + 1))
+	done
+	info "pronto: a JBL é a saída padrão do PulseAudio ($n stream(s) movido(s))."
+}
+
+cmd_stop() {
+	need_root stop
+
+	for idx in $(oss_module_index); do
+		pa unload-module "$idx"
+	done
+
+	pid=$(voss_pid)
+	if [ -n "$pid" ]; then
+		kill $pid
+		info "virtual_oss encerrado; a saída voltou para o dispositivo anterior."
+	else
+		info "a JBL já não estava conectada."
+	fi
+}
+
+cmd_status() {
+	name=$(reachable)
+	if [ -n "$name" ]; then
+		echo "Caixa:        $name ($BDADDR) ao alcance"
+	else
+		echo "Caixa:        $BDADDR não responde (desligada ou fora de alcance)"
+	fi
+	pid=$(voss_pid)
+	if [ -n "$pid" ]; then
+		echo "virtual_oss:  rodando, pid $pid"
+	else
+		echo "virtual_oss:  parado"
+	fi
+	if [ -n "$(oss_module_index)" ]; then
+		def=$(pa get-default-sink 2>/dev/null)
+		echo "PulseAudio:   saída '$SINK' carregada; padrão atual: $def"
+	else
+		echo "PulseAudio:   saída '$SINK' não carregada"
+	fi
+}
+
+case "${1:-}" in
+start)  cmd_start ;;
+stop)   cmd_stop ;;
+status) cmd_status ;;
+*)      echo "uso: $PROG start|stop|status" >&2; exit 2 ;;
+esac

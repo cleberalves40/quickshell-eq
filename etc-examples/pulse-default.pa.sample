@@ -1,0 +1,4 @@
+# Example only: add this line to the user's PulseAudio configuration if the
+# system uses /dev/dsp.local as the local virtual_oss output. Adapt the device
+# and sink name to the local virtual_oss configuration.
+load-module module-oss device=/dev/dsp.local sink_name=laptop_eq record=0 playback=1 mmap=0

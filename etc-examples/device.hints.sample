@@ -1,0 +1,5 @@
+# Optional example for the Lenovo ThinkPad X270 / Realtek ALC298 only.
+# Hardware-specific: do not copy to other systems without validating first.
+hint.hdaa.0.gpio_config="0=set 1=set"
+hint.hdaa.0.nid20.config="as=1 seq=0"
+hint.hdaa.0.nid33.config="as=1 seq=15"
