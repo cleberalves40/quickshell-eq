@@ -24,6 +24,20 @@ com `daemon -r`, sob `rtprio 10` quando possível). Ele também confere se a
 saída do EQ (`qseq31.saida`) está no topo da cadeia e a religa, se o
 WirePlumber a tiver deixado num sink cru durante uma remontagem do Quickshell.
 
+## Visual e analisador
+
+A tela usa a paleta [Nord](https://www.nordtheme.com) com os mesmos papéis do
+`Theme.qml` do Quickshell: fundo nord0, texto nord4, destaque nord8 (Frost), ok
+nord14, aviso nord13, erro nord11, trilhos e bordas nord3.
+
+Acima do gráfico do EQ fica um **analisador de espectro** (`a` liga e desliga), nas
+mesmas 31 colunas das bandas: ele mostra o som *depois* do EQ e dos efeitos. É uma
+captura nativa (`pw_stream` passivo no monitor do sink abaixo do `qseq31`) com FFT de
+8192 pontos (janela de Hann) somada por banda de 1/3 de oitava, em dBFS de -72 a -12.
+As barras sobem em degradê Frost → Aurora; a marca roxa (nord15) é o pico, que segura
+0,8 s. Com o analisador na tela, ela redesenha a ~25 quadros/s (cerca de 10% de um
+núcleo); sem ele, uma vez por segundo. Em terminais com menos de 26 linhas, ele some.
+
 ## Efeitos
 
 Os mesmos do EqualizerPopup do Quickshell, com os mesmos parâmetros, ficam sempre
@@ -76,7 +90,7 @@ eq-tui --print-args         # argumentos do filter-chain para o estado salvo
 
 Teclas: `←→` banda, `↑↓` ±0,5 dB, `PgUp`/`PgDn` (ou `K`/`J`) ±3 dB, `Tab`
 alterna Volume/Ganho/Balanço/Bandas, `0` zera, `r` plano, `+`/`-` volume,
-`m` mudo, `e` liga/desliga, `p` perfis, `s` salva, `c`/`i`/`d`/`x`/`v` efeitos, `q` sai.
+`m` mudo, `e` liga/desliga, `p` perfis, `s` salva, `c`/`i`/`d`/`x`/`v` efeitos, `a` analisador, `q` sai.
 Na linha Efeitos (via `Tab`): `←→` escolhe, `Enter`/espaço liga (no reverb, troca o modo),
 `0` desliga todos (menos o limitador).
 

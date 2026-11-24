@@ -1,4 +1,5 @@
 // Testes do núcleo sem PipeWire: bandas, JSON, estado e presets.
+#include "analyzer.h"
 #include "bands.h"
 #include "chain.h"
 #include "fx.h"
@@ -151,6 +152,28 @@ static void efeitos()
     CHECK(back.fx_comp && !back.fx_limiter && back.fx_spatial && back.fx_echo && back.reverb == "Sala");
 }
 
+static void analisador()
+{
+    // senoide de 1 kHz, amplitude 0,5 (-6 dBFS), janela de Hann como no Analyzer
+    const int n = Analyzer::FFT_N;
+    std::vector<float> re(n), im(n, 0.0f);
+    double s1 = 0, s2 = 0;
+    for (int i = 0; i < n; i++) {
+        double w = 0.5 - 0.5 * std::cos(2 * M_PI * i / (n - 1));
+        s1 += w;
+        s2 += w * w;
+        re[i] = static_cast<float>(0.5 * std::sin(2 * M_PI * 1000.0 * i / 48000.0) * w);
+    }
+    fft(re, im);
+    std::vector<float> p(n / 2 + 1);
+    for (int k = 0; k <= n / 2; k++)
+        p[k] = re[k] * re[k] + im[k] * im[k];
+    auto lv = bandLevels(p, 48000, s1, n * s2 / (s1 * s1));
+    CHECK(std::fabs(lv[17] + 6.02f) < 0.5f); // banda de 1 kHz
+    CHECK(lv[5] < -60 && lv[28] < -60);       // 63 Hz e 12,5 kHz quase em silêncio
+    CHECK(lv[0] >= Analyzer::FLOOR_DB);
+}
+
 int main()
 {
     bandas();
@@ -158,6 +181,7 @@ int main()
     estado();
     presets();
     efeitos();
+    analisador();
     if (failures)
         std::fprintf(stderr, "%d falha(s)\n", failures);
     else

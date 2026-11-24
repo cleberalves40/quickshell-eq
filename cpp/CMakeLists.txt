@@ -22,6 +22,7 @@ target_include_directories(eq_base PUBLIC src/core)
 # Cliente nativo do PipeWire e a convivência com a cadeia do Quickshell.
 add_library(eq_core STATIC
     src/core/pw.cpp
+    src/core/analyzer.cpp
     src/core/chain.cpp
 )
 target_link_libraries(eq_core PUBLIC eq_base PkgConfig::PIPEWIRE Threads::Threads)

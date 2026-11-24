@@ -1,10 +1,12 @@
 #include "ui.h"
 
+#include "analyzer.h"
 #include "bands.h"
 #include "chain.h"
 #include "fx.h"
 #include "pw.h"
 #include "state.h"
+#include "theme.h"
 
 #include <algorithm>
 #include <atomic>
@@ -29,10 +31,15 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-const Color POS = Color::Cyan;
-const Color NEG = Color::RedLight;
-const Color OK = Color::GreenLight;
-const Color DIM = Color::GrayDark;
+// Nord (theme.h): reforço em Frost, corte em laranja, trilhos/grade em nord3
+const Color POS = nord::ACCENT;
+const Color NEG = nord::n12;
+const Color OK = nord::OK;
+const Color DIM = nord::MUTED;    // trilhos, grade, eixo
+const Color SOFT = nord::FG_DIM;  // texto secundário (ajuda, rótulos, info)
+
+// analisador: faixa exibida, em dBFS por banda de 1/3 de oitava
+constexpr float AN_TOP = -12.0f, AN_BOT = -72.0f; // música raramente passa de -12 por banda
 
 constexpr float VOL_STEP = 0.05f;
 
@@ -60,18 +67,28 @@ std::string fmt(const char *f, double v)
 
 class App {
 public:
-    explicit App(Pw &pw) : pw_(pw), st_(State::load()) { refreshSlow(); }
+    App(Pw &pw, Analyzer *an) : pw_(pw), an_(an), st_(State::load())
+    {
+        disp_.fill(Analyzer::FLOOR_DB); // começa no piso, não no topo
+        peak_.fill(Analyzer::FLOOR_DB);
+        refreshSlow(true);
+    }
 
     Element render(int w, int h);
     bool onEvent(const Event &e);
-    void refreshSlow()
+    void refreshSlow(bool force = false)
     {
+        if (!force && Clock::now() - slowAt_ < std::chrono::seconds(1))
+            return;
+        slowAt_ = Clock::now();
         vigiar_ = vigiarPid() != 0;
         st_.enabled = State::load().enabled;
         if (!msg_.empty() && Clock::now() - msgAt_ > std::chrono::seconds(6))
             msg_.clear();
     }
     bool quit = false;
+    /** O analisador está na tela: o relógio da tela passa a ~25 quadros/s. */
+    bool animating() const { return an_ && showAn_.load(); }
 
 private:
     struct Snap {
@@ -109,12 +126,19 @@ private:
     bool keySlider(const Event &e);
 
     Element controls(int width);
+    Element analyzer(int width, int rows);
     Element chart(int width, int height);
     Element info();
     Element help(int width);
     Element modal();
 
     Pw &pw_;
+    Analyzer *an_;
+    std::atomic<bool> showAn_{true};
+    Analyzer::Levels disp_{}, peak_{};
+    std::array<Clock::time_point, N> peakAt_{};
+    Clock::time_point frameAt_ = Clock::now();
+    Clock::time_point slowAt_{};
     State st_;
     Snap s_;
     Focus focus_ = Focus::Bands;
@@ -138,6 +162,8 @@ void App::snapshot()
     s_.upstream = s_.running ? pw_.linkedSink(SAIDA) : "";
     s_.vol = pw_.volume(s_.def).value_or(0.0f);
     s_.muted = pw_.muted(s_.def);
+    if (an_)
+        an_->setTarget(showAn_ ? (s_.running && !s_.upstream.empty() ? s_.upstream : s_.def) : "");
     // Os efeitos do popup aparecem como sinks fx_*; com o EQ 31 eles se somam aos daqui.
     static const std::pair<const char *, const char *> POPUP[] = {
         {"fx_comp", "compressor"}, {"fx_lim", "limitador"}, {"fx_3d", "3D"},
@@ -374,6 +400,11 @@ bool App::keyNormal(const Event &e)
         flat();
         return true;
     }
+    if (isChar(e, "a") && an_) {
+        showAn_ = !showAn_;
+        say(showAn_ ? "analisador ligado" : "analisador desligado");
+        return true;
+    }
     if (isChar(e, "p")) {
         presets_ = listPresets();
         if (presets_.empty()) {
@@ -466,7 +497,7 @@ bool App::keySlider(const Event &e)
 Element labelEl(const std::string &s, bool focused)
 {
     auto t = text(s) | bold;
-    return focused ? t | color(Color::Black) | bgcolor(POS) : t;
+    return focused ? t | color(nord::ACCENT_FG) | bgcolor(POS) : t;
 }
 
 Element bipolar(const std::string &name, bool focused, float pos, int w, const std::string &value,
@@ -490,7 +521,7 @@ Element App::controls(int width)
         text(repeat("█", filled)) | color(s_.muted ? DIM : OK),
         text(repeat("░", w - filled)) | color(DIM),
         text(fmt(" %3.0f%%", s_.vol * 100.0)),
-        s_.muted ? text(" mudo") | color(Color::Red) | bold : text(""),
+        s_.muted ? text(" mudo") | color(nord::CRIT) | bold : text(""),
     });
     std::string balTxt = st_.balance == 0  ? " centro"
                          : st_.balance < 0 ? " L " + std::to_string(-st_.balance)
@@ -516,12 +547,74 @@ Element App::effects()
         if (i == 4 && on)
             name += ": " + st_.reverb + " +3D";
         Element item = text(std::string(on ? " ● " : " ○ ") + name + " ");
-        item = on ? item | color(OK) | bold : item | color(DIM);
+        item = on ? item | color(OK) | bold : item | color(SOFT);
         if (focused && i == fxSel_)
             item = item | inverted;
         row.push_back(item);
     }
     return hbox(std::move(row));
+}
+
+Element App::analyzer(int width, int rows)
+{
+    constexpr int AXIS = 5;
+    int cw = std::clamp((width - AXIS) / N, 1, 4);
+    int barW = cw >= 3 ? cw - 1 : 1;
+
+    // suavização: sobe rápido, desce a 30 dB/s; o pico segura 0,8 s e cai a 12 dB/s
+    auto now = Clock::now();
+    float dt = std::min(0.25f, std::chrono::duration<float>(now - frameAt_).count());
+    frameAt_ = now;
+    Analyzer::Levels lv = an_->levels();
+    for (int i = 0; i < N; i++) {
+        float &d = disp_[i];
+        d = lv[i] > d ? d + (lv[i] - d) * 0.7f : std::max(lv[i], d - 30.0f * dt);
+        d = std::max(d, Analyzer::FLOOR_DB);
+        if (d >= peak_[i]) {
+            peak_[i] = d;
+            peakAt_[i] = now;
+        } else if (now - peakAt_[i] > std::chrono::milliseconds(800)) {
+            peak_[i] = std::max(d, peak_[i] - 12.0f * dt);
+        }
+    }
+
+    static const char *GLYPH[] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+    auto units = [&](float db) { // oitavos de linha
+        float f = (std::clamp(db, AN_BOT, AN_TOP) - AN_BOT) / (AN_TOP - AN_BOT);
+        return static_cast<int>(std::lround(f * rows * 8));
+    };
+    bool live = an_->receiving();
+    Elements out;
+    for (int row = 0; row < rows; row++) {
+        std::string axis = row == 0          ? fmt("%4.0f ", AN_TOP)
+                           : row == rows / 2 ? fmt("%4.0f ", (AN_TOP + AN_BOT) / 2)
+                           : row == rows - 1 ? fmt("%4.0f ", AN_BOT)
+                                             : "     ";
+        Elements cells{text(axis) | color(DIM)};
+        int base = (rows - 1 - row) * 8;
+        Color c = nord::SPECTRUM[std::min<size_t>(nord::SPECTRUM.size() - 1,
+                                                  (rows - 1 - row) * nord::SPECTRUM.size() / rows)];
+        for (int i = 0; i < N; i++) {
+            int fill = std::clamp(units(disp_[i]) - base, 0, 8);
+            int pk = units(peak_[i]) - base;
+            Element cell;
+            if (fill == 0 && live && pk >= 1 && pk <= 8)
+                cell = text(repeat("▔", barW)) | color(nord::n15); // marca do pico
+            else if (fill == 0 && row == rows - 1)
+                cell = text(repeat("▁", barW)) | color(DIM);        // linha de base
+            else
+                cell = text(repeat(GLYPH[fill], barW)) | color(c);
+            if (i == sel_ && focus_ == Focus::Bands)
+                cell = cell | bgcolor(nord::SURFACE);
+            cells.push_back(cell);
+            if (cw > barW)
+                cells.push_back(text(std::string(cw - barW, ' ')));
+        }
+        if (row == 0)
+            cells.push_back(text(live ? "  dBFS" : "  sem som") | color(SOFT));
+        out.push_back(hbox(std::move(cells)));
+    }
+    return vbox(std::move(out));
 }
 
 Element App::chart(int width, int height)
@@ -560,12 +653,12 @@ Element App::chart(int width, int height)
             bool t = filled(topU), b = filled(botU);
             const char *ch = t && b ? "█" : t ? "▀" : b ? "▄" : row == mid ? "─" : " ";
             bool sel = i == sel_;
-            Color c = (t || b) ? (sel ? Color::White : (g > 0 ? POS : NEG)) : DIM;
+            Color c = (t || b) ? (sel ? nord::FG : (g > 0 ? POS : NEG)) : DIM;
             Element cell = text(repeat(ch, barW)) | color(c);
             if (sel) {
                 cell = cell | bold;
                 if (focused && !(t || b) && row != mid)
-                    cell = cell | bgcolor(Color::Palette256(236));
+                    cell = cell | bgcolor(nord::SURFACE);
             }
             cells.push_back(cell);
             if (cw > barW)
@@ -588,7 +681,7 @@ Element App::chart(int width, int height)
         if ((bx >= nextFree && !collides) || (i == sel_ && bx >= cur)) {
             if (bx > cur)
                 lab.push_back(text(std::string(bx - cur, ' ')));
-            lab.push_back(i == sel_ ? text(t) | color(POS) | bold : text(t) | color(DIM));
+            lab.push_back(i == sel_ ? text(t) | color(POS) | bold : text(t) | color(SOFT));
             cur = bx + len;
             nextFree = cur + 1;
         }
@@ -600,18 +693,18 @@ Element App::chart(int width, int height)
 Element App::info()
 {
     if (!msg_.empty())
-        return text(" " + msg_) | color(msgErr_ ? Color::Red : Color::Yellow);
+        return text(" " + msg_) | color(msgErr_ ? nord::CRIT : nord::WARN);
     if (s_.running && !s_.popupFx.empty())
         return text(" popup do Quickshell também com " + s_.popupFx + ": desligue lá para não dobrar") |
-               color(Color::Yellow);
+               color(nord::WARN);
     float f = FREQS[sel_];
     std::string unit = f >= 1000 ? fmt("%g kHz", f / 1000.0) : fmt("%g Hz", f);
     return hbox({
         text(" banda "),
         text(unit) | color(POS) | bold,
         text(fmt(": %+.1f dB", st_.bands[sel_])),
-        text("   saída padrão: " + s_.def) | color(DIM),
-        text(vigiar_ ? "   vigiar ativo" : "   vigiar parado") | color(DIM),
+        text("   saída padrão: " + s_.def) | color(SOFT),
+        text(vigiar_ ? "   vigiar ativo" : "   vigiar parado") | color(SOFT),
     });
 }
 
@@ -620,15 +713,15 @@ Element App::help(int width)
     bool wide = width >= 112;
     const char *t;
     if (focus_ == Focus::Bands)
-        t = wide ? " ←→ banda  ↑↓ ±0.5 dB  PgUp/PgDn ±3  0 zerar  r plano  Tab controles  +/- vol  m mudo  e liga  p perfis  s salvar  c/i/d/x/v efeitos  q sair"
-                 : " ←→ banda ↑↓ dB 0 zera Tab ctrl +- vol m mudo e EQ p perfis s salva c/i/d/x/v fx q sai";
+        t = wide ? " ←→ banda  ↑↓ ±0.5 dB  PgUp/PgDn ±3  0 zerar  r plano  Tab controles  +/- vol  m mudo  e liga  p perfis  s salvar  c/i/d/x/v efeitos  a analisador  q sair"
+                 : " ←→ banda ↑↓ dB 0 zera Tab ctrl +- vol m mudo e EQ p perfis s salva c/i/d/x/v fx a an q sai";
     else if (focus_ == Focus::Effects)
         t = wide ? " ←→ efeito  Enter/espaço liga/desliga (reverb: próximo modo)  0 desliga todos  c compressor  i limitador  d 3D  x eco  v reverb  q sair"
                  : " ←→ efeito  Enter liga  0 desliga todos  c comp i lim d 3D x eco v reverb  q sai";
     else
         t = wide ? " ←→ ajustar  ↑↓/Tab controle  0 zerar  +/- vol  m mudo  e liga/desliga EQ  p perfis  s salvar  c/i/d/x/v efeitos  q sair"
                  : " ←→ ajusta ↑↓/Tab ctrl 0 zera +- vol m mudo e EQ p perfis s salva q sai";
-    return text(t) | color(DIM);
+    return text(t) | color(SOFT);
 }
 
 Element App::modal()
@@ -637,14 +730,15 @@ Element App::modal()
         Elements items;
         for (int i = 0; i < static_cast<int>(presets_.size()); i++) {
             auto t = text(" " + presets_[i] + " ");
-            items.push_back(i == presetSel_ ? t | color(Color::Black) | bgcolor(POS) | focus : t);
+            items.push_back(i == presetSel_ ? t | color(nord::ACCENT_FG) | bgcolor(POS) | focus : t);
         }
         return window(text(" perfis (Enter carrega, Esc fecha) "), vbox(std::move(items)) | vscroll_indicator | frame) |
-               size(WIDTH, EQUAL, 38) | size(HEIGHT, LESS_THAN, 20) | clear_under | center;
+               color(nord::TEXT) | bgcolor(nord::SURFACE) | size(WIDTH, EQUAL, 38) |
+               size(HEIGHT, LESS_THAN, 20) | clear_under | center;
     }
     if (mode_ == Mode::SaveName)
         return window(text(" salvar perfil como (Enter / Esc) "), text(" " + name_ + "▏")) |
-               size(WIDTH, EQUAL, 46) | clear_under | center;
+               color(nord::TEXT) | bgcolor(nord::SURFACE) | size(WIDTH, EQUAL, 46) | clear_under | center;
     return emptyElement();
 }
 
@@ -653,29 +747,37 @@ Element App::render(int w, int h)
     snapshot();
     int innerW = w - 2;
     int chartH = h - 2 - 4 - 1 - 1 - 1; // bordas, controles+efeitos, separador, info, ajuda
+    // analisador acima do gráfico do EQ, nas mesmas colunas; some em telas baixas
+    int anRows = !animating() ? 0 : h >= 34 ? 8 : h >= 26 ? 6 : 0;
+    if (anRows)
+        chartH -= anRows + 1;
 
     std::string preset = st_.preset + (st_.modified ? "*" : "");
     Element eq;
     if (s_.running && s_.def == SINK)
         eq = text("ligado → " + s_.upstream) | color(OK);
     else if (s_.running)
-        eq = text("rodando, fora da saída padrão") | color(Color::Yellow);
+        eq = text("rodando, fora da saída padrão") | color(nord::WARN);
     else if (st_.enabled && !vigiar_)
-        eq = text("ligado no estado, mas o vigiar está parado") | color(Color::Red);
+        eq = text("ligado no estado, mas o vigiar está parado") | color(nord::CRIT);
     else if (st_.enabled)
-        eq = text("ligando…") | color(Color::Yellow);
+        eq = text("ligando…") | color(nord::WARN);
     else
-        eq = text("desligado") | color(DIM);
-    Element title = hbox({text(" quickshell-eq ") | bold, text("· perfil: "), text(preset) | color(POS),
-                          text(" · EQ 31: "), eq, text(" ")});
+        eq = text("desligado") | color(SOFT);
+    Element title = hbox({text(" quickshell-eq ") | bold | color(nord::FG), text("· perfil: ") | color(SOFT),
+                          text(preset) | color(POS), text(" · EQ 31: ") | color(SOFT), eq, text(" ")});
 
-    Element main = window(title, vbox({
-                                     controls(innerW),
-                                     separator() | color(DIM),
-                                     chart(innerW, chartH) | flex,
-                                     info(),
-                                     help(innerW),
-                                 }));
+    Elements body{controls(innerW), separator() | color(DIM)};
+    if (anRows) {
+        body.push_back(analyzer(innerW, anRows));
+        body.push_back(separator() | color(DIM));
+    }
+    body.push_back(chart(innerW, chartH) | flex);
+    body.push_back(info());
+    body.push_back(help(innerW));
+    // borda em nord3, texto em nord4 e fundo nord0, como a barra do Quickshell
+    Element main = window(title, vbox(std::move(body)) | color(nord::TEXT)) | color(DIM) |
+                   bgcolor(nord::BG);
     if (mode_ == Mode::Normal)
         return main;
     return dbox({main, modal()});
@@ -685,7 +787,8 @@ Element App::render(int w, int h)
 
 int runTui(Pw &pw)
 {
-    App app(pw);
+    Analyzer an(pw);
+    App app(pw, &an);
     auto screen = ScreenInteractive::Fullscreen();
     pw.setOnChange([&screen] { screen.PostEvent(Event::Custom); });
 
@@ -695,7 +798,9 @@ int runTui(Pw &pw)
     std::condition_variable cv;
     std::thread ticker([&] {
         std::unique_lock lk(m);
-        while (!cv.wait_for(lk, std::chrono::seconds(1), [&] { return stop.load(); }))
+        // ~25 quadros/s com o analisador na tela; senão, 1 por segundo
+        while (!cv.wait_for(lk, app.animating() ? std::chrono::milliseconds(40) : std::chrono::milliseconds(1000),
+                            [&] { return stop.load(); }))
             screen.PostEvent(Event::Custom);
     });
 
@@ -723,9 +828,15 @@ int runTui(Pw &pw)
 
 int snapshotTui(Pw &pw, int w, int h)
 {
-    App app(pw);
+    Analyzer an(pw);
+    App app(pw, &an);
     auto screen = Screen::Create(Dimension::Fixed(w), Dimension::Fixed(h));
+    // 1º quadro escolhe o alvo do analisador; espera chegar áudio e anima ~1 s
     Render(screen, app.render(w, h));
+    for (int i = 0; i < 25; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        Render(screen, app.render(w, h));
+    }
     std::fputs(screen.ToString().c_str(), stdout);
     std::fputc('\n', stdout);
     return 0;

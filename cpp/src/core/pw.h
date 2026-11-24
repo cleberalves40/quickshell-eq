@@ -88,6 +88,7 @@ public:
     pw_impl_module *loadModule(const char *name, const std::string &args, std::string &err);
     void unloadModule(pw_impl_module *mod);
     pw_loop *loop() const;
+    pw_core *core() const { return core_; }
 
     // usados pelos callbacks
     void onGlobal(uint32_t id, const char *type, const struct spa_dict *props);
