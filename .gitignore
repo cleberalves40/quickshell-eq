@@ -1,4 +1,3 @@
 *.swp
 *~
-tui/target/
 cpp/build/

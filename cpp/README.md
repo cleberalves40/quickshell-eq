@@ -4,7 +4,7 @@ Equalizador gráfico de 31 bandas no terminal, como cliente nativo do PipeWire
 (`libpipewire`) e com a interface em FTXUI, na mesma estrutura do octopkg-tui.
 Usa os mesmos arquivos da versão em Rust (`state.json` e presets em dB).
 
-## Diferenças em relação à versão em Rust
+## Diferenças em relação à versão em Rust (descontinuada)
 
 | | Rust (`tui/`) | C++ (`cpp/`) |
 |---|---|---|
