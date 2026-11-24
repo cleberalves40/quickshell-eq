@@ -67,11 +67,15 @@ núcleo (2 ms por ciclo de 2048 amostras).
 
 ## Presets
 
-`share/quickshell-eq/presets/` tem 23: os 8 de 31 bandas do quickshell-eq 1.0 e os
+`share/quickshell-eq/presets/` tem 24: os 8 de 31 bandas do quickshell-eq 1.0 e os
 14 do popup do Quickshell (15 bandas do mbeq, interpoladas em log-frequência). Os do
 popup que tinham o mesmo nome de um de 31 bandas levam o sufixo `_qs` (`rock_qs`,
 `pop_qs`...). O `fones` é próprio para fones de ouvido: graves profundos, menos
 embolado no médio-grave, alívio em 4-6,3 kHz e ar no topo.
+O `earpods` é o ajuste fino para os Apple EarPods: a média das correções do
+[AutoEq](https://github.com/jaakkopasanen/AutoEq) para quatro medições independentes,
+reduzida onde elas divergem, com ganhos calculados para a curva *resultante* dos 31
+filtros (bandas vizinhas se somam) bater com o alvo.
 
 ## Compilar
 
