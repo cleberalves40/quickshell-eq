@@ -59,16 +59,19 @@ processado).
 
 Ordem: EQ → compressor → 3D → eco → reverb → balanço → limitador (com o Ganho).
 O limitador vem ligado por padrão, com soltura de 0,25 s. A entrada dele desce
-automaticamente pelo pico da curva do EQ (a resposta real dos 31 filtros somados),
-para os reforços não saturarem; o Ganho atua por cima dessa margem. Com tudo no grafo, o filtro usa cerca de 5% de um
+automaticamente pelo pico da curva do EQ (a resposta real dos 31 filtros somados):
+pela metade do pico com o limitador ligado, que segura o que passar de 0 dB, ou pelo
+pico inteiro com ele desligado. O Ganho atua por cima dessa margem. Com o limitador
+ligado, o volume vai até 150% (ele entra antes do limitador); sem ele, até 100%. Com tudo no grafo, o filtro usa cerca de 5% de um
 núcleo (2 ms por ciclo de 2048 amostras).
 
 ## Presets
 
-`share/quickshell-eq/presets/` tem 22: os 8 de 31 bandas do quickshell-eq 1.0 e os
+`share/quickshell-eq/presets/` tem 23: os 8 de 31 bandas do quickshell-eq 1.0 e os
 14 do popup do Quickshell (15 bandas do mbeq, interpoladas em log-frequência). Os do
 popup que tinham o mesmo nome de um de 31 bandas levam o sufixo `_qs` (`rock_qs`,
-`pop_qs`...).
+`pop_qs`...). O `fones` é próprio para fones de ouvido: graves profundos, menos
+embolado no médio-grave, alívio em 4-6,3 kHz e ar no topo.
 
 ## Compilar
 

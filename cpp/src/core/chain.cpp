@@ -40,6 +40,12 @@ std::string num(float v)
 
 } // namespace
 
+float autoMarginDb(const State &st)
+{
+    float peak = curvePeakDb(st.bands);
+    return st.fx_limiter ? peak * 0.5f : peak;
+}
+
 Params paramsFor(const State &st)
 {
     Params p;
@@ -73,9 +79,9 @@ Params paramsFor(const State &st)
     auto [l, r] = balanceMults(st.balance);
     p.emplace_back("balL:Mult", l);
     p.emplace_back("balR:Mult", r);
-    // Margem automática: a entrada desce pelo pico da curva do EQ, para os reforços
-    // (sobretudo nos graves) não empurrarem o sinal contra o limitador.
-    p.emplace_back("lim:Input gain (dB)", std::clamp(st.gain_db - curvePeakDb(st.bands), -20.0f, 20.0f));
+    // Margem automática: a entrada desce pelo pico da curva do EQ (metade, com o
+    // limitador ligado), para os reforços nos graves não saturarem.
+    p.emplace_back("lim:Input gain (dB)", std::clamp(st.gain_db - autoMarginDb(st), -20.0f, 20.0f));
     p.emplace_back("lim:Release time (s)", fx::LIMIT_RELEASE);
     p.emplace_back("lim:Limit (dB)", st.fx_limiter ? fx::LIMIT_ON : fx::LIMIT_OFF);
     return p;

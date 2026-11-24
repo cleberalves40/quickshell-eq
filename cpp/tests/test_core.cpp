@@ -117,6 +117,15 @@ static void efeitos()
     CHECK(param(p, "revL:Dry/wet mix") == 0 && param(p, "revR:Dry/wet mix") == 0);
     CHECK(param(p, "lim:Limit (dB)") == fx::LIMIT_ON);
     CHECK(param(p, "lim:Input gain (dB)") == 0 && param(p, "lim:Release time (s)") == fx::LIMIT_RELEASE);
+    {
+        State m;
+        m.bands[17] = 6; // pico de 6 dB em 1 kHz
+        CHECK(std::fabs(autoMarginDb(m) - 3) < 0.1f);      // limitador ligado: metade
+        m.fx_limiter = false;
+        CHECK(std::fabs(autoMarginDb(m) - 6) < 0.1f);      // desligado: o pico inteiro
+        m.gain_db = 5;
+        CHECK(std::fabs(param(paramsFor(m), "lim:Input gain (dB)") - (5 - 6)) < 0.1f);
+    }
 
     st.fx_comp = st.fx_spatial = st.fx_echo = true;
     st.fx_limiter = false;

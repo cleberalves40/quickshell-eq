@@ -23,6 +23,9 @@
 namespace qseq {
 
 Params paramsFor(const State &st);
+/** Margem automática (dB a descer na entrada do limitador): o pico inteiro da curva do EQ,
+ *  ou metade dele com o limitador ligado, que segura o que passar de 0 dB. */
+float autoMarginDb(const State &st);
 /** Argumentos (SPA-JSON) do libpipewire-module-filter-chain. */
 std::string filterArgs(const State &st, const std::string &target);
 

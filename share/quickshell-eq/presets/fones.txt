@@ -1,0 +1,35 @@
+# quickshell-eq: <freq Hz> <ganho dB> — perfil para fones de ouvido
+# Graves profundos (o que o fone perde em relação a uma caixa), menos embolado no
+# médio-grave, presença em 2-2,5 kHz, alívio na região áspera de 4-6,3 kHz e "ar" no topo.
+# Para ouvir longo sem cansar. Com o limitador ligado, a margem automática é -3 dB.
+20 4.0
+25 4.0
+31.5 4.0
+40 3.5
+50 3.0
+63 2.5
+80 2.0
+100 1.5
+125 1.0
+160 0.5
+200 0.0
+250 -0.5
+315 -1.0
+400 -1.0
+500 -0.5
+630 0.0
+800 0.0
+1000 0.0
+1250 0.0
+1600 0.5
+2000 1.0
+2500 1.0
+3150 0.0
+4000 -1.0
+5000 -1.5
+6300 -1.0
+8000 0.0
+10000 1.0
+12500 1.5
+16000 1.5
+20000 1.0

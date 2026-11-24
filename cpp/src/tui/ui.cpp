@@ -213,7 +213,9 @@ void App::balance(int d)
 
 void App::volume(float d)
 {
-    float v = std::round(std::clamp(s_.vol + d, 0.0f, 1.0f) * 100.0f) / 100.0f;
+    // acima de 100% só com o limitador ligado: o volume do qseq31 entra antes dele
+    float top = st_.fx_limiter ? 1.5f : 1.0f;
+    float v = std::round(std::clamp(s_.vol + d, 0.0f, std::max(top, s_.vol)) * 100.0f) / 100.0f;
     Pw::Lock l(pw_);
     if (!pw_.setVolume(s_.def, v))
         say("não consegui mudar o volume de " + s_.def, true);
@@ -514,13 +516,18 @@ Element bipolar(const std::string &name, bool focused, float pos, int w, const s
 Element App::controls(int width)
 {
     int w = std::max(10, width - 10 - 20); // à direita: valor + margem automática
-    int filled = static_cast<int>(std::lround(std::clamp(s_.vol, 0.0f, 1.0f) * w));
+    // a barra vai até 150%; a marca de 100% fica a 2/3 dela
+    int filled = static_cast<int>(std::lround(std::clamp(s_.vol / 1.5f, 0.0f, 1.0f) * w));
+    int mark = static_cast<int>(std::lround(w / 1.5f));
     Element vol = hbox({
         labelEl(" Volume  ", focus_ == Focus::Volume),
         text(" "),
-        text(repeat("█", filled)) | color(s_.muted ? DIM : OK),
-        text(repeat("░", w - filled)) | color(DIM),
-        text(fmt(" %3.0f%%", s_.vol * 100.0)),
+        text(repeat("█", std::min(filled, mark))) | color(s_.muted ? DIM : OK),
+        text(repeat("█", std::max(0, filled - mark))) | color(s_.muted ? DIM : nord::WARN),
+        text(repeat("░", std::max(0, mark - filled))) | color(DIM),
+        text(filled < mark ? "│" : "") | color(SOFT),
+        text(repeat("░", std::max(0, w - std::max(filled, mark) - (filled < mark ? 1 : 0)))) | color(DIM),
+        text(fmt(" %3.0f%%", s_.vol * 100.0)) | color(s_.vol > 1.001f ? nord::WARN : nord::TEXT),
         s_.muted ? text(" mudo") | color(nord::CRIT) | bold : text(""),
     });
     std::string balTxt = st_.balance == 0  ? " centro"
@@ -529,7 +536,7 @@ Element App::controls(int width)
     return vbox({
         vol,
         bipolar(" Ganho   ", focus_ == Focus::Gain, st_.gain_db / GAIN_MAX, w,
-                fmt(" %+.0f dB", st_.gain_db) + fmt(" auto -%.1f", curvePeakDb(st_.bands)),
+                fmt(" %+.0f dB", st_.gain_db) + fmt(" auto -%.1f", autoMarginDb(st_)),
                 st_.gain_db != 0),
         bipolar(" Balanço ", focus_ == Focus::Balance, static_cast<float>(st_.balance) / BAL_MAX, w,
                 balTxt, st_.balance != 0),
