@@ -25,6 +25,7 @@ struct Pw::Node {
     uint64_t serial = 0;
     std::string name;
     std::string cls;
+    bool filter = false; // saída de filter-chain/loopback (tem node.link-group)
     pw_proxy *proxy = nullptr;
     spa_hook objListener{};
     spa_hook proxyListener{};
@@ -261,6 +262,7 @@ void Pw::onGlobal(uint32_t id, const char *type, const spa_dict *props)
             n->name = s;
         if ((s = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS)))
             n->cls = s;
+        n->filter = spa_dict_lookup(props, PW_KEY_NODE_LINK_GROUP) != nullptr;
         if ((s = spa_dict_lookup(props, PW_KEY_OBJECT_SERIAL)))
             n->serial = std::strtoull(s, nullptr, 10);
         if (n->cls == "Audio/Sink") {
@@ -368,7 +370,10 @@ std::vector<uint32_t> Pw::streamsInto(const std::string &sink, const std::string
         if (l.in != *sid)
             continue;
         auto it = nodes_.find(l.out);
-        if (it != nodes_.end() && it->second->cls == "Stream/Output/Audio" && it->second->name != except)
+        // Só programas: mover a saída de um filtro (eq_p2, vol_out...) para o qseq31
+        // fecharia um laço, e o WirePlumber ainda guardaria esse destino.
+        if (it != nodes_.end() && it->second->cls == "Stream/Output/Audio" && !it->second->filter &&
+            it->second->name != except)
             out.insert(l.out);
     }
     return {out.begin(), out.end()};

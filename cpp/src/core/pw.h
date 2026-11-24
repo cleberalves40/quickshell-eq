@@ -72,7 +72,7 @@ public:
     std::optional<uint32_t> nodeId(const std::string &name) const;
     /** Sink para onde o stream `stream` está ligado. */
     std::string linkedSink(const std::string &stream) const;
-    /** Streams de apps ligados ao sink (exceto `except`). */
+    /** Streams de programas ligados ao sink (exceto `except`); saídas de filtros ficam de fora. */
     std::vector<uint32_t> streamsInto(const std::string &sink, const std::string &except) const;
     /** Volume no estilo do pactl (raiz cúbica do linear), 0..1.5; nullopt se desconhecido. */
     std::optional<float> volume(const std::string &sink) const;
