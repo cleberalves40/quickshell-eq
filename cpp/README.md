@@ -49,6 +49,8 @@ nem cortar o som:
 | Compressor (`c`) | `dysonCompress` (-12 dB, 0,4 s, 0,4, 0,6) | mixer 100% comprimido | mixer 100% seco |
 | Limitador (`i`) | `fastLookaheadLimiter` | limite -1 dB | limite 0 dB (só evita clipping) |
 | 3D (`d`) | `matrixSpatialiser` | largura 200 | largura 0 (neutro) |
+| Chorus (`o`) | `multivoiceChorus`, um por canal (3 vozes, 18 ms, desafinação 1,5%, LFO 2 / 2,3 Hz) | mixer 100% processado | seco |
+| Flanger (`f`) | `flanger`, um por canal (3 ms, profundidade 2,5 ms, LFO 0,33 / 0,37 Hz, feedback 50%) | processado +3 dB | seco |
 | Eco (`x`) | `lcrDelay` (L 250 ms, R 375 ms, feedback 35%, níveis 24) | 40% processado | seco |
 | Reverb (`v`) | `plate`, um por canal (estéreo) + abertura 3D do modo | Sala, Opera, Stadium, Caverna | seco |
 
@@ -57,7 +59,10 @@ Cada modo de reverb também abre o estéreo pelo 3D, mais quanto maior o espaço
 somam, até 512. O eco é um pouco mais presente que o do popup (feedback 35%, 40%
 processado).
 
-Ordem: EQ → compressor → 3D → eco → reverb → balanço → limitador (com o Ganho).
+Ordem: EQ → compressor → chorus → flanger → 3D → eco → reverb → balanço → limitador (com o
+Ganho). No chorus e no flanger o LFO do canal direito é um pouco mais rápido: os lados
+ondulam fora de fase e o efeito abre no estéreo. Os dois já devolvem o som original
+misturado, então o mixer só alterna seco/processado, como no compressor.
 O limitador vem ligado por padrão, com soltura de 0,25 s. A entrada dele desce
 automaticamente pelo pico da curva do EQ (a resposta real dos 31 filtros somados):
 pela metade do pico com o limitador ligado, que segura o que passar de 0 dB, ou pelo
@@ -97,7 +102,7 @@ eq-tui --print-args         # argumentos do filter-chain para o estado salvo
 
 Teclas: `←→` banda, `↑↓` ±0,5 dB, `PgUp`/`PgDn` (ou `K`/`J`) ±3 dB, `Tab`
 alterna Volume/Ganho/Balanço/Bandas, `0` zera, `r` plano, `+`/`-` volume,
-`m` mudo, `e` liga/desliga, `p` perfis, `s` salva, `c`/`i`/`d`/`x`/`v` efeitos, `a` analisador, `q` sai.
+`m` mudo, `e` liga/desliga, `p` perfis, `s` salva, `c`/`i`/`o`/`f`/`d`/`x`/`v` efeitos, `a` analisador, `q` sai.
 Na linha Efeitos (via `Tab`): `←→` escolhe, `Enter`/espaço liga (no reverb, troca o modo),
 `0` desliga todos (menos o limitador).
 

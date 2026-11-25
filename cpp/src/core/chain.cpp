@@ -59,6 +59,27 @@ Params paramsFor(const State &st)
         p.emplace_back(std::string("mixC") + c + ":Gain 1", st.fx_comp ? 0.0f : 1.0f);
         p.emplace_back(std::string("mixC") + c + ":Gain 2", st.fx_comp ? 1.0f : 0.0f);
     }
+    // chorus e flanger: mesmo esquema seco/processado do compressor
+    const auto &ch = fx::CHORUS;
+    const auto &fl = fx::FLANGER;
+    for (const char *c : {"L", "R"}) {
+        std::string C = c;
+        bool left = C == "L";
+        p.emplace_back("mixH" + C + ":Gain 1", st.fx_chorus ? 0.0f : 1.0f);
+        p.emplace_back("mixH" + C + ":Gain 2", st.fx_chorus ? 1.0f : 0.0f);
+        p.emplace_back("chor" + C + ":Number of voices", ch.voices);
+        p.emplace_back("chor" + C + ":Delay base (ms)", ch.base);
+        p.emplace_back("chor" + C + ":Voice separation (ms)", ch.separation);
+        p.emplace_back("chor" + C + ":Detune (%)", ch.detune);
+        p.emplace_back("chor" + C + ":LFO frequency (Hz)", left ? ch.lfoL : ch.lfoR);
+        p.emplace_back("chor" + C + ":Output attenuation (dB)", ch.atten);
+        p.emplace_back("mixF" + C + ":Gain 1", st.fx_flanger ? 0.0f : 1.0f);
+        p.emplace_back("mixF" + C + ":Gain 2", st.fx_flanger ? fl.makeup : 0.0f);
+        p.emplace_back("flan" + C + ":Delay base (ms)", fl.base);
+        p.emplace_back("flan" + C + ":Max slowdown (ms)", fl.depth);
+        p.emplace_back("flan" + C + ":LFO frequency (Hz)", left ? fl.lfoL : fl.lfoR);
+        p.emplace_back("flan" + C + ":Feedback", fl.feedback);
+    }
     const auto &rv = fx::REVERBS[fx::reverbIndex(st.reverb.c_str())];
     int width = (st.fx_spatial ? fx::SPATIAL_WIDTH : 0) + rv.width;
     p.emplace_back("spat:Width", static_cast<float>(std::min(width, fx::WIDTH_MAX)));
@@ -120,11 +141,32 @@ std::string filterArgs(const State &st, const std::string &target)
               << "      { type = ladspa name = rev" << C << " plugin = \"" << L
               << "plate_1423.so\" label = plate control = { " << ctl("rev" + C, "Reverb time") << " "
               << ctl("rev" + C, "Damping") << " " << ctl("rev" + C, "Dry/wet mix") << " } }\n"
+              << "      { type = ladspa name = chor" << C << " plugin = \"" << L
+              << "multivoice_chorus_1201.so\" label = multivoiceChorus control = { "
+              << ctl("chor" + C, "Number of voices") << " " << ctl("chor" + C, "Delay base (ms)") << " "
+              << ctl("chor" + C, "Voice separation (ms)") << " " << ctl("chor" + C, "Detune (%)") << " "
+              << ctl("chor" + C, "LFO frequency (Hz)") << " " << ctl("chor" + C, "Output attenuation (dB)")
+              << " } }\n"
+              << "      { type = builtin name = mixH" << C << " label = mixer control = { "
+              << ctl("mixH" + C, "Gain 1") << " " << ctl("mixH" + C, "Gain 2") << " } }\n"
+              << "      { type = ladspa name = flan" << C << " plugin = \"" << L
+              << "flanger_1191.so\" label = flanger control = { " << ctl("flan" + C, "Delay base (ms)") << " "
+              << ctl("flan" + C, "Max slowdown (ms)") << " " << ctl("flan" + C, "LFO frequency (Hz)") << " "
+              << ctl("flan" + C, "Feedback") << " } }\n"
+              << "      { type = builtin name = mixF" << C << " label = mixer control = { "
+              << ctl("mixF" + C, "Gain 1") << " " << ctl("mixF" + C, "Gain 2") << " } }\n"
               << "      { type = builtin name = bal" << C << " label = linear control = { "
               << ctl("bal" + C, "Mult") << " } }\n";
         links << "      { output = \"eq" << C << N << ":Out\" input = \"comp" << C << ":Input\" }\n"
               << "      { output = \"eq" << C << N << ":Out\" input = \"mixC" << C << ":In 1\" }\n"
-              << "      { output = \"comp" << C << ":Output\" input = \"mixC" << C << ":In 2\" }\n";
+              << "      { output = \"comp" << C << ":Output\" input = \"mixC" << C << ":In 2\" }\n"
+              // compressor → chorus (seco em paralelo) → flanger (seco em paralelo)
+              << "      { output = \"mixC" << C << ":Out\" input = \"chor" << C << ":Input\" }\n"
+              << "      { output = \"mixC" << C << ":Out\" input = \"mixH" << C << ":In 1\" }\n"
+              << "      { output = \"chor" << C << ":Output\" input = \"mixH" << C << ":In 2\" }\n"
+              << "      { output = \"mixH" << C << ":Out\" input = \"flan" << C << ":Input\" }\n"
+              << "      { output = \"mixH" << C << ":Out\" input = \"mixF" << C << ":In 1\" }\n"
+              << "      { output = \"flan" << C << ":Output\" input = \"mixF" << C << ":In 2\" }\n";
     }
     nodes << "      { type = ladspa name = spat plugin = \"" << L
           << "matrix_spatialiser_1422.so\" label = matrixSpatialiser control = { " << ctl("spat", "Width")
@@ -139,8 +181,8 @@ std::string filterArgs(const State &st, const std::string &target)
           << "fast_lookahead_limiter_1913.so\" label = fastLookaheadLimiter control = { "
           << ctl("lim", "Input gain (dB)") << " " << ctl("lim", "Limit (dB)") << " "
           << ctl("lim", "Release time (s)") << " } }\n";
-    links << "      { output = \"mixCL:Out\" input = \"spat:Input L\" }\n"
-          << "      { output = \"mixCR:Out\" input = \"spat:Input R\" }\n"
+    links << "      { output = \"mixFL:Out\" input = \"spat:Input L\" }\n"
+          << "      { output = \"mixFR:Out\" input = \"spat:Input R\" }\n"
           << "      { output = \"spat:Output L\" input = \"echo:L input\" }\n"
           << "      { output = \"spat:Output R\" input = \"echo:R input\" }\n"
           << "      { output = \"echo:L output\" input = \"revL:Input\" }\n"

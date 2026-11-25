@@ -23,6 +23,8 @@ struct State {
     bool fx_limiter = true; // o limitador sempre protegeu o ganho; ligado por padrão
     bool fx_spatial = false;
     bool fx_echo = false;
+    bool fx_chorus = false;
+    bool fx_flanger = false;
     std::string reverb = "Off";
 
     static State load();

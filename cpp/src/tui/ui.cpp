@@ -46,8 +46,8 @@ constexpr float VOL_STEP = 0.05f;
 enum class Focus { Volume, Gain, Balance, Effects, Bands };
 constexpr int NFOCUS = 5;
 
-const char *FX_NAMES[] = {"Compressor", "Limitador", "3D", "Eco", "Reverb"};
-constexpr int NFX = 5;
+const char *FX_NAMES[] = {"Compressor", "Limitador", "Chorus", "Flanger", "3D", "Eco", "Reverb"};
+constexpr int NFX = 7; // o último (Reverb) alterna modos; os outros são liga/desliga
 enum class Mode { Normal, Presets, SaveName };
 
 std::string repeat(const std::string &s, int n)
@@ -243,8 +243,10 @@ bool App::fxOn(int i) const
     switch (i) {
     case 0: return st_.fx_comp;
     case 1: return st_.fx_limiter;
-    case 2: return st_.fx_spatial;
-    case 3: return st_.fx_echo;
+    case 2: return st_.fx_chorus;
+    case 3: return st_.fx_flanger;
+    case 4: return st_.fx_spatial;
+    case 5: return st_.fx_echo;
     default: return st_.reverb != "Off";
     }
 }
@@ -254,8 +256,10 @@ void App::toggleFx(int i)
     switch (i) {
     case 0: st_.fx_comp = !st_.fx_comp; break;
     case 1: st_.fx_limiter = !st_.fx_limiter; break;
-    case 2: st_.fx_spatial = !st_.fx_spatial; break;
-    case 3: st_.fx_echo = !st_.fx_echo; break;
+    case 2: st_.fx_chorus = !st_.fx_chorus; break;
+    case 3: st_.fx_flanger = !st_.fx_flanger; break;
+    case 4: st_.fx_spatial = !st_.fx_spatial; break;
+    case 5: st_.fx_echo = !st_.fx_echo; break;
     default: {
         int r = (fx::reverbIndex(st_.reverb.c_str()) + 1) % static_cast<int>(fx::REVERBS.size());
         st_.reverb = fx::REVERBS[r].name;
@@ -275,7 +279,7 @@ void App::zero()
     case Focus::Gain: gain(-st_.gain_db); break;
     case Focus::Balance: balance(-st_.balance); break;
     case Focus::Effects:
-        st_.fx_comp = st_.fx_spatial = st_.fx_echo = false;
+        st_.fx_comp = st_.fx_spatial = st_.fx_echo = st_.fx_chorus = st_.fx_flanger = false;
         st_.fx_limiter = true;
         st_.reverb = "Off";
         touch();
@@ -403,7 +407,7 @@ bool App::keyNormal(const Event &e)
         zero();
         return true;
     }
-    static const char *FX_KEYS[] = {"c", "i", "d", "x", "v"};
+    static const char *FX_KEYS[] = {"c", "i", "o", "f", "d", "x", "v"};
     for (int i = 0; i < NFX; i++) {
         if (isChar(e, FX_KEYS[i])) {
             toggleFx(i);
@@ -564,7 +568,7 @@ Element App::effects()
     for (int i = 0; i < NFX; i++) {
         bool on = fxOn(i);
         std::string name = FX_NAMES[i];
-        if (i == 4 && on)
+        if (i == NFX - 1 && on) // o reverb é o último
             name += ": " + st_.reverb + " +3D";
         Element item = text(std::string(on ? " ● " : " ○ ") + name + " ");
         item = on ? item | color(OK) | bold : item | color(SOFT);
@@ -733,13 +737,13 @@ Element App::help(int width)
     bool wide = width >= 112;
     const char *t;
     if (focus_ == Focus::Bands)
-        t = wide ? " ←→ banda  ↑↓ ±0.5 dB  PgUp/PgDn ±3  0 zerar  r plano  Tab controles  +/- vol  m mudo  e liga  p perfis  s salvar  c/i/d/x/v efeitos  a analisador  q sair"
-                 : " ←→ banda ↑↓ dB 0 zera Tab ctrl +- vol m mudo e EQ p perfis s salva c/i/d/x/v fx a an q sai";
+        t = wide ? " ←→ banda  ↑↓ ±0.5 dB  PgUp/PgDn ±3  0 zerar  r plano  Tab controles  +/- vol  m mudo  e liga  p perfis  s salvar  c/i/o/f/d/x/v efeitos  a analisador  q sair"
+                 : " ←→ banda ↑↓ dB 0 zera Tab ctrl +- vol m mudo e EQ p perfis s salva c/i/o/f/d/x/v fx a an q sai";
     else if (focus_ == Focus::Effects)
-        t = wide ? " ←→ efeito  Enter/espaço liga/desliga (reverb: próximo modo)  0 desliga todos  c compressor  i limitador  d 3D  x eco  v reverb  q sair"
-                 : " ←→ efeito  Enter liga  0 desliga todos  c comp i lim d 3D x eco v reverb  q sai";
+        t = wide ? " ←→ efeito  Enter/espaço liga/desliga (reverb: próximo modo)  0 desliga todos  c compressor  i limitador  o chorus  f flanger  d 3D  x eco  v reverb  q sair"
+                 : " ←→ efeito  Enter liga  0 desliga todos  c comp i lim o chor f flan d 3D x eco v rev  q sai";
     else
-        t = wide ? " ←→ ajustar  ↑↓/Tab controle  0 zerar  +/- vol  m mudo  e liga/desliga EQ  p perfis  s salvar  c/i/d/x/v efeitos  q sair"
+        t = wide ? " ←→ ajustar  ↑↓/Tab controle  0 zerar  +/- vol  m mudo  e liga/desliga EQ  p perfis  s salvar  c/i/o/f/d/x/v efeitos  q sair"
                  : " ←→ ajusta ↑↓/Tab ctrl 0 zera +- vol m mudo e EQ p perfis s salva q sai";
     return text(t) | color(SOFT);
 }

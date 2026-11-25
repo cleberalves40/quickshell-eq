@@ -144,6 +144,22 @@ static void efeitos()
 
     CHECK(fx::reverbIndex("Caverna") == 4 && fx::reverbIndex("nada") == 0);
     CHECK(param(p, "echo:Feedback") == fx::ECHO.feedback && param(p, "echo:R delay (ms)") == 375);
+    {   // modulação: seco por padrão; ligado, só o processado (com compensação no flanger)
+        State m;
+        Params q = paramsFor(m);
+        CHECK(param(q, "mixHL:Gain 1") == 1 && param(q, "mixHL:Gain 2") == 0);
+        CHECK(param(q, "mixFR:Gain 1") == 1 && param(q, "mixFR:Gain 2") == 0);
+        m.fx_chorus = m.fx_flanger = true;
+        q = paramsFor(m);
+        CHECK(param(q, "mixHR:Gain 1") == 0 && param(q, "mixHR:Gain 2") == 1);
+        CHECK(param(q, "mixFL:Gain 2") == fx::FLANGER.makeup);
+        CHECK(param(q, "chorL:LFO frequency (Hz)") != param(q, "chorR:LFO frequency (Hz)"));
+        std::string g = filterArgs(m, "x");
+        CHECK(g.find("multivoiceChorus") != std::string::npos && g.find("label = flanger") != std::string::npos);
+        CHECK(g.find("\"mixFL:Out\" input = \"spat:Input L\"") != std::string::npos);
+        State back;
+        CHECK(State::fromJson(m.toJson(), back) && back.fx_chorus && back.fx_flanger);
+    }
 
     // reverb sozinho já abre o estéreo; somado ao 3D, respeita o limite do plugin
     State cav;

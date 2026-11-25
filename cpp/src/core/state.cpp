@@ -69,6 +69,8 @@ std::string State::toJson() const
       << ",\n  \"fx_limiter\": " << (fx_limiter ? "true" : "false")
       << ",\n  \"fx_spatial\": " << (fx_spatial ? "true" : "false")
       << ",\n  \"fx_echo\": " << (fx_echo ? "true" : "false")
+      << ",\n  \"fx_chorus\": " << (fx_chorus ? "true" : "false")
+      << ",\n  \"fx_flanger\": " << (fx_flanger ? "true" : "false")
       << ",\n  \"reverb\": " << json::quote(reverb) << "\n}\n";
     return o.str();
 }
@@ -104,6 +106,8 @@ bool State::fromJson(const std::string &text, State &st)
     flag("fx_limiter", st.fx_limiter);
     flag("fx_spatial", st.fx_spatial);
     flag("fx_echo", st.fx_echo);
+    flag("fx_chorus", st.fx_chorus);
+    flag("fx_flanger", st.fx_flanger);
     if (auto r = v.get("reverb"); r && r->type == json::Value::String)
         st.reverb = r->str;
     st.normalize();
