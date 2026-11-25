@@ -148,6 +148,7 @@ private:
     std::vector<std::string> presets_;
     int presetSel_ = 0;
     std::string name_;
+    bool nameFresh_ = false; // o nome sugerido está "selecionado": a 1ª tecla o substitui
     std::string msg_;
     bool msgErr_ = false;
     Clock::time_point msgAt_{};
@@ -346,11 +347,22 @@ bool App::onEvent(const Event &e)
             savePreset(name_);
         } else if (e == Event::Escape) {
             mode_ = Mode::Normal;
+        } else if (e == Event::Special("\x15")) { // Ctrl+U limpa
+            name_.clear();
+            nameFresh_ = false;
         } else if (e == Event::Backspace) {
-            if (!name_.empty())
+            if (nameFresh_)
+                name_.clear();
+            else if (!name_.empty())
                 name_.pop_back();
-        } else if (e.is_character() && e.character().size() == 1 && name_.size() < 40) {
-            name_ += e.character();
+            nameFresh_ = false;
+        } else if (e.is_character() && e.character().size() == 1 &&
+                   static_cast<unsigned char>(e.character()[0]) >= 0x20) {
+            if (nameFresh_)
+                name_.clear();
+            nameFresh_ = false;
+            if (name_.size() < 40)
+                name_ += e.character();
         }
         return true;
     }
@@ -420,6 +432,7 @@ bool App::keyNormal(const Event &e)
     }
     if (isChar(e, "s")) {
         name_ = st_.preset == "flat" ? "" : st_.preset;
+        nameFresh_ = !name_.empty();
         mode_ = Mode::SaveName;
         return true;
     }
@@ -744,8 +757,14 @@ Element App::modal()
                size(HEIGHT, LESS_THAN, 20) | clear_under | center;
     }
     if (mode_ == Mode::SaveName)
-        return window(text(" salvar perfil como (Enter / Esc) "), text(" " + name_ + "▏")) |
-               color(nord::TEXT) | bgcolor(nord::SURFACE) | size(WIDTH, EQUAL, 46) | clear_under | center;
+        return window(text(" salvar perfil como (Enter / Esc) "),
+                      vbox({hbox({text(" "),
+                                  nameFresh_ ? text(name_) | color(nord::ACCENT_FG) | bgcolor(nord::ACCENT)
+                                             : text(name_),
+                                  text("▏")}),
+                            text(nameFresh_ ? " Enter regrava · digite para trocar · Ctrl+U limpa"
+                                            : " Ctrl+U limpa") | color(SOFT)})) |
+               color(nord::TEXT) | bgcolor(nord::SURFACE) | size(WIDTH, EQUAL, 58) | clear_under | center;
     return emptyElement();
 }
 
