@@ -838,7 +838,23 @@ int runTui(Pw &pw)
         auto dim = Terminal::Size();
         return app.render(dim.dimx, dim.dimy);
     });
+    // O PipeWire pode reiniciar com a tela aberta (pw-sessao restart, conexão da JBL):
+    // a conexão morre e nada mais chega. Detecta (a queda gera um evento e o relógio
+    // confere a cada segundo) e sai com TUI_RECONNECT; o main reconecta e reabre.
+    bool lost = false;
     auto comp = CatchEvent(renderer, [&](Event e) {
+        if (e == Event::Custom) {
+            bool ok;
+            {
+                Pw::Lock l(pw);
+                ok = pw.connected();
+            }
+            if (!ok) {
+                lost = true;
+                screen.Exit();
+                return true;
+            }
+        }
         bool handled = app.onEvent(e);
         if (app.quit)
             screen.Exit();
@@ -853,7 +869,7 @@ int runTui(Pw &pw)
     }
     cv.notify_all();
     ticker.join();
-    return 0;
+    return lost ? TUI_RECONNECT : 0;
 }
 
 int snapshotTui(Pw &pw, int w, int h)

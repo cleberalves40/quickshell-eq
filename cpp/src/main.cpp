@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -115,6 +116,33 @@ int main(int argc, char **argv)
 
     pw_init(&argc, &argv);
     int rc;
+    if (cmd.empty()) {
+        // Tela: se o PipeWire reiniciar, espera ele voltar e reabre (até ~30 s).
+        for (;;) {
+            std::unique_ptr<Pw> pw;
+            std::string err;
+            for (int t = 0; t < 60; t++) {
+                pw = std::make_unique<Pw>();
+                if (pw->connect(err))
+                    break;
+                pw.reset();
+                if (t == 0)
+                    std::fprintf(stderr, "eq-tui: aguardando o PipeWire (%s)...\n", err.c_str());
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+            if (!pw) {
+                std::fprintf(stderr, "eq-tui: %s\n", err.c_str());
+                rc = 1;
+                break;
+            }
+            rc = runTui(*pw);
+            if (rc != TUI_RECONNECT)
+                break;
+            std::fprintf(stderr, "eq-tui: o PipeWire reiniciou; reconectando...\n");
+        }
+        pw_deinit();
+        return rc;
+    }
     {
         Pw pw;
         std::string err;
