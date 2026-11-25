@@ -36,7 +36,7 @@ constexpr EchoParams ECHO{};
 
 // Efeitos de modulação (plugins de Steve Harris). Os dois já devolvem o som original
 // misturado (chorus: 100%; flanger: 71%), então o mixer só alterna seco/processado,
-// como no compressor. O LFO do canal direito é um pouco mais rápido: os lados ondulam
+// como no compressor, com o volume do lado processado igualado ao do seco. O LFO do canal direito é um pouco mais rápido: os lados ondulam
 // fora de fase e o efeito abre no estéreo.
 // multivoiceChorus: Number of voices, Delay base (ms), Voice separation (ms), Detune (%),
 // LFO frequency (Hz) [2-30], Output attenuation (dB)
@@ -45,9 +45,13 @@ struct ChorusParams {
 };
 constexpr ChorusParams CHORUS{};
 // flanger: Delay base (ms), Max slowdown (ms), LFO frequency (Hz), Feedback [-1, 1]
+// Ajuste "jato" de synth-pop do fim dos anos 80 (referência: Round & Round, New Order):
+// varredura lenta (~5 s), funda e ressonante.
 struct FlangerParams {
-    float base = 3, depth = 2.5f, lfoL = 0.33f, lfoR = 0.37f, feedback = 0.5f;
-    float makeup = 1.41f; // +3 dB: o flanger devolve o seco a -3 dB
+    float base = 2, depth = 4.5f, lfoL = 0.20f, lfoR = 0.23f, feedback = 0.7f;
+    // Medido com ruído rosa: com estes ajustes a saída fica 2,1 dB acima do seco (a
+    // ressonância soma energia); 0,8 iguala, e ligar o efeito não muda o volume.
+    float makeup = 0.8f;
 };
 constexpr FlangerParams FLANGER{};
 

@@ -50,7 +50,7 @@ nem cortar o som:
 | Limitador (`i`) | `fastLookaheadLimiter` | limite -1 dB | limite 0 dB (só evita clipping) |
 | 3D (`d`) | `matrixSpatialiser` | largura 200 | largura 0 (neutro) |
 | Chorus (`o`) | `multivoiceChorus`, um por canal (3 vozes, 18 ms, desafinação 1,5%, LFO 2 / 2,3 Hz) | mixer 100% processado | seco |
-| Flanger (`f`) | `flanger`, um por canal (3 ms, profundidade 2,5 ms, LFO 0,33 / 0,37 Hz, feedback 50%) | processado +3 dB | seco |
+| Flanger (`f`) | `flanger`, um por canal (2 ms, profundidade 4,5 ms, LFO 0,20 / 0,23 Hz, feedback 70%): o "jato" do synth-pop do fim dos anos 80 | processado a 0,8× (mesmo volume do seco) | seco |
 | Eco (`x`) | `lcrDelay` (L 250 ms, R 375 ms, feedback 35%, níveis 24) | 40% processado | seco |
 | Reverb (`v`) | `plate`, um por canal (estéreo) + abertura 3D do modo | Sala, Opera, Stadium, Caverna | seco |
 
