@@ -35,8 +35,9 @@ mesmas 31 colunas das bandas: ele mostra o som *depois* do EQ e dos efeitos. É 
 captura nativa (`pw_stream` passivo no monitor do sink abaixo do `qseq31`) com FFT de
 8192 pontos (janela de Hann) somada por banda de 1/3 de oitava, em dBFS de -72 a -12.
 As barras sobem em degradê Frost → Aurora; a marca roxa (nord15) é o pico, que segura
-0,8 s. Com o analisador na tela, ela redesenha a ~25 quadros/s (cerca de 10% de um
-núcleo); sem ele, uma vez por segundo. Em terminais com menos de 26 linhas, ele some.
+0,8 s. Com o analisador animando, a tela redesenha a ~12 quadros/s; no silêncio (barras
+assentadas) ou sem o analisador, uma vez por segundo. Cada quadro reenvia a tela inteira
+ao terminal: atrás de um tmux, 25 quadros/s custavam mais de um núcleo só para desenhar. Em terminais com menos de 26 linhas, ele some.
 
 ## Efeitos
 

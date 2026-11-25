@@ -88,7 +88,9 @@ public:
     }
     bool quit = false;
     /** O analisador está na tela: o relógio da tela passa a ~25 quadros/s. */
-    bool animating() const { return an_ && showAn_.load(); }
+    bool animating() const { return showingAnalyzer() && anBusy_.load(); }
+    /** O painel do analisador está na tela (mesmo parado, no silêncio). */
+    bool showingAnalyzer() const { return an_ && showAn_.load(); }
 
 private:
     struct Snap {
@@ -135,6 +137,9 @@ private:
     Pw &pw_;
     Analyzer *an_;
     std::atomic<bool> showAn_{true};
+    // chega áudio ou as barras ainda estão descendo: só então vale animar. Cada quadro
+    // reenvia a tela inteira (~37 KB a 110x36) ao terminal; parado no silêncio, nada.
+    std::atomic<bool> anBusy_{true};
     Analyzer::Levels disp_{}, peak_{};
     std::array<Clock::time_point, N> peakAt_{};
     Clock::time_point frameAt_ = Clock::now();
@@ -608,6 +613,10 @@ Element App::analyzer(int width, int rows)
         return static_cast<int>(std::lround(f * rows * 8));
     };
     bool live = an_->receiving();
+    bool moving = live;
+    for (int i = 0; i < N && !moving; i++)
+        moving = disp_[i] > Analyzer::FLOOR_DB + 0.5f || peak_[i] > Analyzer::FLOOR_DB + 0.5f;
+    anBusy_ = moving;
     Elements out;
     for (int row = 0; row < rows; row++) {
         std::string axis = row == 0          ? fmt("%4.0f ", AN_TOP)
@@ -631,8 +640,10 @@ Element App::analyzer(int width, int rows)
             if (i == sel_ && focus_ == Focus::Bands)
                 cell = cell | bgcolor(nord::SURFACE);
             cells.push_back(cell);
+            // o espaço entre barras leva a cor da linha: sem trocar de cor a cada
+            // coluna, cada linha sai como uma sequência só (menos bytes por quadro)
             if (cw > barW)
-                cells.push_back(text(std::string(cw - barW, ' ')));
+                cells.push_back(text(std::string(cw - barW, ' ')) | color(row == rows - 1 ? DIM : c));
         }
         if (row == 0)
             cells.push_back(text(live ? "  dBFS" : "  sem som") | color(SOFT));
@@ -778,7 +789,7 @@ Element App::render(int w, int h)
     int innerW = w - 2;
     int chartH = h - 2 - 4 - 1 - 1 - 1; // bordas, controles+efeitos, separador, info, ajuda
     // analisador acima do gráfico do EQ, nas mesmas colunas; some em telas baixas
-    int anRows = !animating() ? 0 : h >= 34 ? 8 : h >= 26 ? 6 : 0;
+    int anRows = !showingAnalyzer() ? 0 : h >= 34 ? 8 : h >= 26 ? 6 : 0;
     if (anRows)
         chartH -= anRows + 1;
 
@@ -828,8 +839,9 @@ int runTui(Pw &pw)
     std::condition_variable cv;
     std::thread ticker([&] {
         std::unique_lock lk(m);
-        // ~25 quadros/s com o analisador na tela; senão, 1 por segundo
-        while (!cv.wait_for(lk, app.animating() ? std::chrono::milliseconds(40) : std::chrono::milliseconds(1000),
+        // ~12 quadros/s com o analisador animando; parado ou fechado, 1 por segundo.
+        // (Atrás de um tmux, 25 quadros/s custavam mais de um núcleo só para desenhar.)
+        while (!cv.wait_for(lk, app.animating() ? std::chrono::milliseconds(80) : std::chrono::milliseconds(1000),
                             [&] { return stop.load(); }))
             screen.PostEvent(Event::Custom);
     });
